@@ -10,9 +10,11 @@ matplotlib
 mlflow
 pandas
 peft
+roc-utils
 scikit-learn
+scipy==1.11.4
 seaborn
 sentence-transformers
 tqdm
 tensorboardX
-transformers
+transformers~=4.47.1
