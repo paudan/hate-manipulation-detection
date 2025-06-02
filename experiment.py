@@ -92,7 +92,7 @@ def load_data(data_dir, task='Semantika', dedup_dir="../dedup"):
         df = pd.concat([
             pd.read_excel(file, sheet_name="Manipuliaciniai", header=0, usecols=["Komentaras"]).assign(label=1),
             pd.read_excel(file, sheet_name="Neutralūs", header=0, usecols=["Komentaras"]).assign(label=0)
-        ]).rename(columns={"Komentaras": "text"})
+        ]).rename(columns={"Komentaras": "text"}).reset_index(drop=True)
         texts = df['text'].progress_apply(preprocess_text).tolist()
         return texts, df['label']
     elif task == 'Russian':

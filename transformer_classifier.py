@@ -5,6 +5,7 @@ import numpy as np
 from datasets import Dataset
 import torch
 import torch.nn as nn
+from peft import LoraConfig, get_peft_model, TaskType
 from transformers import AutoTokenizer, AutoConfig, TrainingArguments, Trainer, BertConfig, BertModel
 from transformers.trainer_callback import EarlyStoppingCallback
 from transformers.modeling_outputs import SequenceClassifierOutput
@@ -85,7 +86,7 @@ def get_training_args(output_dir, batch_size=8, num_epochs=20):
         metric_for_best_model='eval_accuracy',
         load_best_model_at_end=True,
         greater_is_better=True,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=1,
         logging_strategy='epoch',
@@ -150,7 +151,7 @@ def evaluate_fold(predictions, average='binary'):
 
 def cross_validate(texts, targets, model_path, num_folds, cache_dir=None, output_dir='test-classifier', 
                    batch_size=16, num_epochs=20, average='binary', tuned_layers_count=0, 
-                   dropout=0.0, **model_args):
+                   dropout=0.1, use_lora=False, lora_args={}, model_args={}):
     set_seed()
     all_predictions = list()
     all_logits = list()
@@ -172,13 +173,31 @@ def cross_validate(texts, targets, model_path, num_folds, cache_dir=None, output
         valid_dataset = tokenized_dataset["test"].shuffle(seed=SEED)
         eval_dst = Dataset.from_generator(lambda: input_generator(X_test, y_test))
         eval_dataset = eval_dst.map(tokenize_function, batched=True)
+        tuned_layers_count = tuned_layers_count if not use_lora else 0
+        model=TransformerClassifier.from_pretrained(
+            model_path,
+            config=AutoConfig.from_pretrained(model_path, cache_dir=cache_dir),
+            num_labels=len(set(targets)),
+            cache_dir=cache_dir,
+            device_map='cuda' if torch.cuda.is_available() else 'cpu',
+            tuned_layers_count=tuned_layers_count,
+            dropout=dropout                
+        )
+        if use_lora:
+            default_lora_args = {
+                "task_type": TaskType.SEQ_CLS,
+                "modules_to_save": ["classifier"]
+            }
+            lora_args.update(default_lora_args)
+            config = LoraConfig(**lora_args)
+            model = get_peft_model(model, config)
         trainer = Trainer(
             model=TransformerClassifier.from_pretrained(
                 model_path,
                 config=AutoConfig.from_pretrained(model_path, cache_dir=cache_dir),
                 num_labels=len(set(targets)),
                 cache_dir=cache_dir,
-                device_map='cuda' if torch.cuda.is_available() else 'cpu',
+                device_map='cuda:0' if torch.cuda.is_available() else 'cpu',
                 tuned_layers_count=tuned_layers_count,
                 dropout=dropout                
             ),
