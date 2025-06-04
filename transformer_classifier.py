@@ -43,6 +43,7 @@ class TransformerClassifier(BertModel):
         input_ids: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
         labels: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -52,6 +53,7 @@ class TransformerClassifier(BertModel):
             input_ids,
             token_type_ids=token_type_ids,
             attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict
@@ -192,15 +194,7 @@ def cross_validate(texts, targets, model_path, num_folds, cache_dir=None, output
             config = LoraConfig(**lora_args)
             model = get_peft_model(model, config)
         trainer = Trainer(
-            model=TransformerClassifier.from_pretrained(
-                model_path,
-                config=AutoConfig.from_pretrained(model_path, cache_dir=cache_dir),
-                num_labels=len(set(targets)),
-                cache_dir=cache_dir,
-                device_map='cuda:0' if torch.cuda.is_available() else 'cpu',
-                tuned_layers_count=tuned_layers_count,
-                dropout=dropout                
-            ),
+            model=model,
             args=get_training_args(output_dir=output_dir, batch_size=batch_size, num_epochs=num_epochs),
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
