@@ -179,6 +179,7 @@ data/
 example/
 interpret
 mlruns/
+notebooks/
 outputs/
 results/
 runs/
@@ -186,5 +187,3 @@ tests/
 *.zip
 *.tar.xz
 *.parquet
-# Test cases
-*.ipynb

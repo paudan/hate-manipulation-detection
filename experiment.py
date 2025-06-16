@@ -70,7 +70,7 @@ def remove_dates(text):
     return text
 
 
-def load_data(data_dir, task='Semantika', dedup_dir="../dedup"):
+def load_data(data_dir, task='Semantika', dedup_dir="clean_metahate"):
     if task =='Semantika':
         df = pd.read_csv(Path(data_dir)/'Semantika_2.txt', sep='__', header=None, usecols=[2], engine='python')
         df = df[2].str.split(" ", n=1, expand=True)
@@ -79,8 +79,9 @@ def load_data(data_dir, task='Semantika', dedup_dir="../dedup"):
         texts = df.progress_apply(lambda x : preprocess_text(x[1]), axis=1).tolist()
         return texts, labels
     elif task == 'EmotionLT':
-        df = pd.read_excel(Path(data_dir)/'Dabartiniai Duomenys.xlsx', sheet_name='Komentarai', 
-                   usecols=['Comment', 'Emocinis manipuliavimas stiprumas'])
+        # df = pd.read_excel(Path(data_dir)/'Dabartiniai Duomenys.xlsx', sheet_name='Komentarai', 
+        #            usecols=['Comment', 'Emocinis manipuliavimas stiprumas'])
+        df = pd.read_csv(Path(data_dir)/'LTEmotion.csv', header=0)
         df.columns = ['Comment', 'Target']
         df = df[~pd.isnull(df['Target'])]
         labels_map = {'No': 0, 'Low': 1, 'Medium': 2, 'High': 3, 'Critical': 4}
