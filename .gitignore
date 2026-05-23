@@ -184,6 +184,7 @@ outputs/
 results/
 runs/
 tests/
+wandb/
 *.zip
 *.tar.xz
 *.parquet

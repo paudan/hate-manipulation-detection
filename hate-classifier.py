@@ -14,10 +14,13 @@ pred_e5_multi, truth_e5_multi, logits_e5_multi, results_e5_multi = cross_validat
     model_path="intfloat/multilingual-e5-base", 
     num_folds=num_folds, 
     cache_dir=cache_dir, 
-    batch_size=64,
-    num_epochs=10,
     tuned_layers_count=-1,
-    output_dir=f'{task.lower()}-e5-base'
+    training_args=dict(
+        output_dir=f'{task.lower()}-e5-base',
+        batch_size=64,
+        eval_batch_size=64,
+        num_epochs=10
+    )
 )
 
 def calculate_summary(actual, predictions, model_name):

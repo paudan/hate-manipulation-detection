@@ -6,11 +6,13 @@ from datasets import Dataset
 import torch
 import torch.nn as nn
 from peft import LoraConfig, get_peft_model, TaskType
-from transformers import AutoTokenizer, AutoConfig, TrainingArguments, Trainer, BertConfig, BertModel
+from transformers import AutoTokenizer, AutoConfig, Trainer, BertConfig, BertModel
+from transformers import set_seed
 from transformers.trainer_callback import EarlyStoppingCallback
 from transformers.modeling_outputs import SequenceClassifierOutput
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score, cohen_kappa_score
 from sklearn.model_selection import StratifiedKFold
+from finetune import get_training_args, compute_metrics
 
 os.environ["TOKENIZERS_PARALLELISM"] = 'true'
 os.environ['WANDB_DISABLED'] = 'true'
@@ -75,56 +77,6 @@ class TransformerClassifier(BertModel):
             loss=loss,
             logits=logits
         )
-    
-
-def set_seed():
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
-    torch.cuda.manual_seed(SEED)
-
-def get_training_args(output_dir, batch_size=8, num_epochs=20):
-    return TrainingArguments(
-        output_dir=output_dir,
-        metric_for_best_model='eval_accuracy',
-        load_best_model_at_end=True,
-        greater_is_better=True,
-        eval_strategy="epoch",
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=1,
-        logging_strategy='epoch',
-        log_level='info',
-        logging_first_step=True,
-        save_strategy='epoch',
-        save_total_limit=2,
-        num_train_epochs=num_epochs,
-        auto_find_batch_size=False,
-        ignore_data_skip=True,
-        disable_tqdm=False,
-        overwrite_output_dir=True,
-        # lr_scheduler_type="cosine",
-        fp16_full_eval=False,
-        fp16=False,
-        fp16_opt_level='O1',
-        report_to=['tensorboard'],
-        seed=SEED,
-        data_seed=SEED
-    )
-
-def compute_metrics(eval_preds, average='binary'):
-    logits, actual = eval_preds
-    predictions = np.argmax(logits, axis=-1)
-    precision, recall, f1, _ = precision_recall_fscore_support(actual, predictions, average=average, zero_division=0, pos_label=1)
-    try:
-        roc_auc = roc_auc_score(predictions, actual)
-    except:
-        roc_auc = np.nan
-    return {
-       'accuracy': accuracy_score(predictions, actual),
-       'f1_score': f1,
-       'precision': precision,
-       'recall': recall,
-       'roc_auc': roc_auc
-    }
 
 def input_generator(texts, targets):
     for txt, label in zip(texts, targets):
@@ -151,10 +103,9 @@ def evaluate_fold(predictions, average='binary'):
     return calculate_scores(actual, predictions, average=average)
 
 
-def cross_validate(texts, targets, model_path, num_folds, cache_dir=None, output_dir='test-classifier', 
-                   batch_size=16, num_epochs=20, average='binary', tuned_layers_count=0, 
-                   dropout=0.1, use_lora=False, lora_args={}, model_args={}):
-    set_seed()
+def cross_validate(texts, targets, model_path, num_folds, cache_dir=None, average='binary', tuned_layers_count=0, 
+                   dropout=0.1, use_lora=False, lora_args={}, model_args={}, training_args={}):
+    set_seed(SEED)
     all_predictions = list()
     all_logits = list()
     all_ground_truth = list()
@@ -195,7 +146,7 @@ def cross_validate(texts, targets, model_path, num_folds, cache_dir=None, output
             model = get_peft_model(model, config)
         trainer = Trainer(
             model=model,
-            args=get_training_args(output_dir=output_dir, batch_size=batch_size, num_epochs=num_epochs),
+            args=get_training_args(**training_args),
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
             compute_metrics=partial(compute_metrics, average=average),
