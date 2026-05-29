@@ -12,10 +12,10 @@ pandas
 peft
 roc-utils
 scikit-learn
-scipy==1.11.4
+scipy
 seaborn
 sentence-transformers
 tqdm
 tensorboardX
-transformers~=4.47.1
+transformers
 wandb

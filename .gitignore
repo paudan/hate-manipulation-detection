@@ -177,9 +177,9 @@ cython_debug/
 cache/
 data/
 example/
-interpret
+experiments/
+interpret/
 mlruns/
-notebooks/
 outputs/
 results/
 runs/

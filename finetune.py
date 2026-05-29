@@ -1,6 +1,9 @@
 import os
+import gc
+from typing import Union, Optional, Any
 import numpy as np
 import torch
+from torch import nn
 from datasets import DatasetDict
 from peft import LoraConfig, get_peft_model, TaskType
 from transformers import AutoTokenizer, AutoConfig, AutoModel, AutoModelForSequenceClassification
@@ -8,10 +11,42 @@ from transformers import set_seed
 from transformers import TrainingArguments, Trainer 
 from transformers.trainer_callback import EarlyStoppingCallback      
 from sklearn.metrics import accuracy_score, f1_score, classification_report, precision_recall_fscore_support, roc_auc_score
+from sklearn.utils import compute_class_weight
 from experiment import preprocess_text
 
 os.environ["TOKENIZERS_PARALLELISM"] = 'true'
 SEED = 42
+
+
+class WeightedTrainer(Trainer):
+    def __init__(self, *args, class_weights=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights
+
+    def compute_loss(
+        self,
+        model: nn.Module,
+        inputs: dict[str, Union[torch.Tensor, Any]],
+        return_outputs: bool = False,
+        num_items_in_batch: Optional[torch.Tensor] = None,
+    ):
+        labels = inputs.pop("labels", None)
+        if self.model_accepts_loss_kwargs:
+            kwargs = {}
+            if num_items_in_batch is not None:
+                kwargs["num_items_in_batch"] = num_items_in_batch
+            inputs = {**inputs, **kwargs}
+        outputs = model(**inputs)
+        if self.args.past_index >= 0:
+            self._past = outputs[self.args.past_index]
+        logits = outputs.logits
+        if self.class_weights is not None:
+            weight = torch.tensor(self.class_weights, dtype=torch.float, device=logits.device)
+        else:
+            weight = None
+        loss = nn.CrossEntropyLoss(weight=weight)(logits, labels.view(-1))
+        return (loss, outputs) if return_outputs else loss
+
 
 def split_dataset(ds, train_size=0.7, valid_size=0.15):
     ds = ds.class_encode_column("labels")
@@ -44,11 +79,11 @@ def get_training_args(output_dir, batch_size=64, num_epochs=20, eval_batch_size=
         auto_find_batch_size=False,
         ignore_data_skip=True,
         disable_tqdm=False,
-        overwrite_output_dir=True,
+        # overwrite_output_dir=True,
         # lr_scheduler_type="cosine",
         fp16_full_eval=False,
         fp16=False,
-        fp16_opt_level='O1',
+        # fp16_opt_level='O1',
         report_to=report_to,
         seed=SEED,
         data_seed=SEED
@@ -70,9 +105,16 @@ def compute_metrics(eval_preds, average='macro'):
        'roc_auc': roc_auc
     }
 
-def train_eval_model(model_name, dataset, labels_map, use_lora=True, **training_args):
+
+def get_class_weights(labels):
+    labels = [int(x.cpu().item()) if isinstance(x, torch.Tensor) else int(x) for x in labels]
+    class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(labels), y=labels)
+    return class_weights
+
+
+def train_eval_model(model_name, dataset, labels_map, use_lora=True, use_class_weights=False, **training_args):
     set_seed(SEED)
-    device ='cuda:0' if torch.cuda.is_available() else 'cpu'
+    device ='cuda' if torch.cuda.is_available() else 'cpu'
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     config = AutoConfig.from_pretrained(model_name)
     processor = AutoModel.from_pretrained(model_name, device_map=device)
@@ -90,8 +132,8 @@ def train_eval_model(model_name, dataset, labels_map, use_lora=True, **training_
             init_lora_weights="olora", 
             target_modules="all-linear"
         )
-        model = get_peft_model(model, config)  
-    trainer = Trainer(
+        model = get_peft_model(model, config)
+    trainer_params = dict(
         model=model,
         args=get_training_args(**training_args),
         train_dataset=dataset_dict['train'],
@@ -99,8 +141,30 @@ def train_eval_model(model_name, dataset, labels_map, use_lora=True, **training_
         compute_metrics=compute_metrics,
         callbacks=[
             EarlyStoppingCallback(early_stopping_patience=5)
-        ]
-    )
+        ]        
+    )  
+    if use_class_weights:
+        trainer = WeightedTrainer(
+            class_weights=get_class_weights(dataset_dict['train']['labels']),
+            **trainer_params
+        )
+    else:
+        trainer = Trainer(**trainer_params)
     trainer.train()
     predictions = trainer.predict(dataset_dict['test'])
     print(classification_report(predictions.label_ids, np.argmax(predictions.predictions, axis=1), target_names=labels_map.keys()))
+    try:
+        # Move model to CPU before deleting to ensure GPU memory is freed
+        if torch.cuda.is_available():
+            try:
+                model.cpu()
+            except Exception:
+                pass
+        del trainer, model, tokenizer
+    finally:
+        gc.collect()
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
