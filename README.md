@@ -49,6 +49,8 @@ The following transformer models were used in the experiments:
 
 Results of emotion detection (presence of emotion) in Lithuanian text using various transformer models and discretization strategies. They are obtained using stratified hooldout testing, 70% data for training, 15% data for validation and 15% data for testing.
 
+In this experiment we considered difefernt settings, like using Lora and 4-bit quantization for more efficient finetuning (for the ModernBERT model), as well as weighted binary cross entropy to handle imbalanced dataset issue. 
+
 #### 2-class classification (neutral vs. present)
 
 | Model | Accuracy | Precision (Present) | Recall (Present) | F1-score (Present) | Precision (Macro) | Recall (Macro) | F1-score (Macro) |
